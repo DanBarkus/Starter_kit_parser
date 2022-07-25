@@ -1,0 +1,10 @@
+- Remove old graph and table generation code
+- Reformat to parse graph exports (un-zip)
+- Change case of recognized features:
+    - Vertexes - already recognized
+    - Edges - already recognized
+    - Keywords - pull in list from linter
+    - variable names - find way to parse
+    - accumulators - should be simple regex
+- Determine indentation and line length
+    - Find best spot to split line if over 80 characters
