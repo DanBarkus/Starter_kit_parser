@@ -112,105 +112,6 @@ def parse_schema():
             
     schema_file.close()
 
-def generate_graph(folder_path, mdOut):
-    viz_graph = nx.MultiDiGraph()
-
-    nodes = []
-    for node in schema["nodes"]:
-        attrs = {}
-        for att in node["attributes"]:
-            attrs[att["name"]] = att["type"]
-        nodes.append(tuple((node["name"], attrs)))
-
-    edges = []
-    for edge in schema["edges"]:
-        attrs = {}
-        for att in edge["attributes"]:
-            attrs[att["name"]] = att["type"]
-        edges.append(tuple((edge["from"], edge["to"], 1.0, attrs)))
-
-
-    viz_graph.clear()
-    plt.clf()
-    viz_graph.add_nodes_from(nodes)
-    viz_graph.add_edges_from(edges)
-    nx.draw_kamada_kawai(viz_graph, node_color=range(len(nodes)), cmap=plt.cm.tab20, edge_color='#545454', with_labels=True, font_weight='bold')
-    plt.savefig(folder_path + 'schema.png')
-    mdOut.write('## Schema\n')
-    mdOut.write('![](schema.png)\n')
-# print(json.dumps(schema, indent=2))
-
-def add_schema_tables(mdOut):
-    mdOut.write('<table>\n')
-    mdOut.write('<tr><th>Nodes</th><th>Edges</th></tr>\n')
-    mdOut.write('<tr><td>\n\n')
-
-    for node in schema["nodes"]:
-        mdOut.write(f'### {node["name"]}{nl}')
-        mdOut.write('|Attribute|Type|\n')
-        mdOut.write('|--|--|\n')
-        mdOut.write(f'|**Primary id -** {node["primary_id"]["name"]}|{node["primary_id"]["type"]}|{nl}')
-        for idx, attr in enumerate(node["attributes"]):
-            mdOut.write(f'|{node["attributes"][idx]["name"]}|{node["attributes"][idx]["type"]}|{nl}')
-        mdOut.write("\n")
-
-    mdOut.write('</td><td>\n\n')
-
-    for edge in schema["edges"]:
-        mdOut.write(f'### {edge["name"]}')
-        mdOut.write('\n')
-        mdOut.write('|From Vert|To Vert|\n')
-        mdOut.write('|--|--|\n')
-        mdOut.write(f'|{edge["from"]}|{edge["to"]}|{nl}')
-        mdOut.write('\n')
-        if edge["attributes"] != []:
-            mdOut.write('|Attribute|Type|\n')
-            mdOut.write('|--|--|\n')
-            for idx, attr in enumerate(edge["attributes"]):
-                mdOut.write(f'|{edge["attributes"][idx]["name"]}|{edge["attributes"][idx]["type"]}|{nl}')
-            mdOut.write("\n")
-    mdOut.write('</td></tr> </table>\n\n')
-
-def count_graph(input_folder, mdOut):
-    node_count = {}
-    edge_count = {}
-    tot_nodes = 0
-    tot_edges = 0
-    dataFolder = input_folder + 'GlobalTypes/'
-    for filename in os.listdir(dataFolder):
-        if filename.endswith('.csv'):
-            component = os.path.splitext(filename)[0]
-            if component in vert_names:
-                with open(dataFolder + filename, 'r', encoding='latin1') as csv:
-                    # csv = unicode(csv, errors='ignore')
-                    for i, l in enumerate(csv):
-                        pass
-                node_count[component] = i
-                tot_nodes += i
-            elif component in edge_names:
-                with open(dataFolder + filename, 'r', encoding='latin1') as csv:
-                    for i, l in enumerate(csv):
-                        pass
-                edge_count[component] = i
-                tot_edges += i
-    mdOut.write('## Node and Edge Count\n')
-    mdOut.write('<table>\n')
-    mdOut.write(f'<tr><th>Total Nodes: {tot_nodes}</th><th>Total Edges: {tot_edges}</th></tr>{nl}')
-    mdOut.write('<tr><td>\n\n')
-    mdOut.write('|Node|Count|\n')
-    mdOut.write('|--|--|\n')
-    for node in node_count:
-        mdOut.write(f'|{node}|{node_count[node]}|{nl}')
-    mdOut.write('</td><td>\n\n')
-    mdOut.write('|Edge|Count|\n')
-    mdOut.write('|--|--|\n')
-    for edge in edge_count:
-        mdOut.write(f'|{edge}|{edge_count[edge]}|{nl}')
-    mdOut.write('</td></tr> </table>\n')
-
-def add_title(project_title, mdOut):
-    mdOut.write(f'# {project_title}{nl}')
-
 def process_queries(mdOut):
     for file in glob.glob(input_folder + 'DBImportExport*.gsql'):
         mdOut.write('## Queries\n')
@@ -236,20 +137,14 @@ def process_queries(mdOut):
                 mdOut.write('\n```\n')
                 mdOut.write('---\n\n')
 
-all_folders = glob.glob('./*/')
-for folder in all_folders:
-    input_folder = folder
-    project_name = folder.split('/')[1]
-    print(project_name)
-    mdOut = open(input_folder + project_name + ".md", 'w')
+# all_folders = glob.glob('./*/')
+# for folder in all_folders:
+#     input_folder = folder
+#     project_name = folder.split('/')[1]
+#     print(project_name)
+#     mdOut = open(input_folder + project_name + ".md", 'w')
+#     parse_schema()
+#     process_queries(mdOut)
 
-    parse_schema()
-    add_title(project_name, mdOut)
-    generate_graph(input_folder, mdOut)
-    get_folder_size(input_folder, mdOut)
-    count_graph(input_folder, mdOut)
-    add_schema_tables(mdOut)
-    process_queries(mdOut)
-
-    mdOut.close()
-    break
+#     mdOut.close()
+#     break
