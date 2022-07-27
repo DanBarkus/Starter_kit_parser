@@ -50,12 +50,12 @@ def parse_schema():
     schema = {}
     verts = []
     edges = []
-    schema_file = open(input_folder + 'global.gsql', 'r')
+    schema_file = open(input_folder + 'db_scripts/schemas/schema.gsql', 'r') # Reading schema file
 
     for line in schema_file:
         # see if our line is dealing with a vertex or edge
-        vertex_name = re.search(r'(?:create|CREATE) (?:vertex|VERTEX) ([\w\_\-]*)', line)
-        edge_name = re.search(r'(?:create|CREATE) (\w*) (?:edge|EDGE) ([\w\_\-]*)', line)
+        vertex_name = re.search(r'(?:create|CREATE|add|ADD) (?:vertex|VERTEX) ([\w\_\-]*)', line)
+        edge_name = re.search(r'(?:create|CREATE|add|ADD) (\w*) (?:edge|EDGE) ([\w\_\-]*)', line)
         if vertex_name != None:
             vertex = {}
             vertex_name = vertex_name.group(1)
@@ -113,29 +113,40 @@ def parse_schema():
     schema_file.close()
 
 def process_queries(mdOut):
-    for file in glob.glob(input_folder + 'DBImportExport*.gsql'):
+    for file in glob.glob(input_folder + 'db_scripts/queries/*.gsql'): # Iterates towards queries
         mdOut.write('## Queries\n')
         with open(file, 'r') as query_file:
             queries = query_file.read()
-            queries = re.findall(r'((?:CREATE|create)\s*\w*\s*(?:QUERY|query).*?\})\n', queries, re.S)
-            for query in queries:
-                query_line = re.search(r'(?:CREATE|create)\s*\w*\s*(?:QUERY|query)\s*(.*?)\s*\((.*?)\).*?(?:FOR|for)', query, re.S)
-                query_name = query_line[1]
-                mdOut.write(f'### {query_name}{nl}')
+            # queries = re.findall(r'((?:CREATE|create)\s*\w*\s*(?:QUERY|query).*?\})\n', queries, re.S)
+            query_line = re.search(r'(?:CREATE|create)\s*\w*\s*(?:QUERY|query)\s*(.*?)\s*\((.*?)\).*?(?:FOR|for)', queries, re.S)
+            query_name = query_line[1]
+            mdOut.write(f'### {query_name}{nl}')
 
-                query_attrs = query_line[2]
-                if query_attrs != "":
-                    mdOut.write('#### **Input Variables**\n')
-                    mdOut.write('|Variable Name|Type|\n')
-                    mdOut.write('|--|--|\n')
-                    query_attrs = query_attrs.split(',')
-                    for attr in query_attrs:
-                        attr = attr.split(' ')
-                        mdOut.write(f'|{attr[1]}|{attr[0]}|{nl}')
-                mdOut.write('```\n')
-                mdOut.write(query)
-                mdOut.write('\n```\n')
-                mdOut.write('---\n\n')
+            query_attrs = query_line[2]
+            if query_attrs != "":
+                mdOut.write('#### **Input Variables**\n')
+                mdOut.write('|Variable Name|Type|\n')
+                mdOut.write('|--|--|\n')
+                query_attrs = query_attrs.split(',')
+                for attr in query_attrs:
+                    attr = attr.split(' ')
+                    mdOut.write(f'|{attr[1]}|{attr[0]}|{nl}')
+            mdOut.write('```\n')
+            # mdOut.write(str(query))
+            mdOut.write('\n```\n')
+            mdOut.write('---\n\n')
+
+def get_loading_jobs():
+    for file in glob.glob(input_folder + 'db_scripts/jobs/*.gsql'):
+        print(file)
+
+def get_data():
+    for file in glob.glob(input_folder + 'data/*.*'):
+        print(file)
+
+def get_udfs():
+    for file in glob.glob(input_folder + 'db_scripts/UDFs/*.hpp'):
+        print(file)
 
 # all_folders = glob.glob('./*/')
 # for folder in all_folders:
@@ -148,3 +159,9 @@ def process_queries(mdOut):
 
 #     mdOut.close()
 #     break
+
+# parse_schema()
+# process_queries(open("README.md", 'w'))
+# get_loading_jobs()
+# get_data()
+# get_udfs()
