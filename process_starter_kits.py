@@ -2,9 +2,6 @@ import re
 import os
 import math
 import glob
-import json
-import networkx as nx
-import matplotlib.pyplot as plt
 
 # Newline variable for f-strings
 nl = '\n'
@@ -147,6 +144,31 @@ def get_data():
 def get_udfs():
     for file in glob.glob(input_folder + 'db_scripts/UDFs/*.hpp'):
         print(file)
+
+def update_syntax():
+    with open('reserved_words.txt', 'r') as reserved_words: # read the reserved words
+        words = [l.strip() for l in reserved_words.readlines()]
+
+        print(words)
+        for file in glob.glob(f"{input_folder}db_scripts/*/*gsql"):
+            with open(file, 'r+') as f:
+                lines = f.readlines()
+                updated_lines = []
+                for l in lines:
+                    old_lines = l.split(" ")
+                    new_lines = []
+                    for o in old_lines:
+                        if o.strip().upper() in words:
+                            new_lines.append(o.upper())
+                        else:
+                            new_lines.append(o)
+                    updated_lines.append(' '.join(new_lines))
+                    print(' '.join(new_lines))
+                f.seek(0)
+                f.write(''.join(updated_lines))
+        
+update_syntax()
+        
 
 # all_folders = glob.glob('./*/')
 # for folder in all_folders:
