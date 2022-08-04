@@ -217,20 +217,60 @@ def parse_queries():
                     replacement_dict[query_name] = new_query_name
 
         
-    print(replacement_dict)
+    # print(replacement_dict)
 
 def get_replacement(in_word):
     return replacement_dict[in_word[0]]
 
+def to_upper(to_replace):
+    return casefy.uppercase(to_replace[0])
+
 def do_replacement():
+    words_to_capital = compile_list_to_regex(capital_words)
     to_replace = replacement_dict.keys()
     to_replace_regex = compile_list_to_regex(to_replace)
-    print(to_replace_regex)
+    line_comment = False
+    block_comment = False
     for q_file in glob.glob(input_folder + 'db_scripts/queries/*.gsql'):
         with open(q_file, 'r') as query_file:
             new_file = open(q_file+'.new', 'w+')
             for line in query_file:
+                # check for // to indicate whole (or part) line comment
+                comment_text = re.search(r'(.*)(\/\/.*\n)', line)
+                # check for /* to indicate start of comment block
+                block_comment_text = re.search(r'\/\*(.*)', line)
+                # check for */ to indicate end of comment block
+                end_block_comment = re.search(r'\*\/', line)
+
+                # set the block comment flag to false once we reach the end of a block comment
+                if end_block_comment and block_comment:
+                    block_comment = False
+                    new_file.write(line)
+                    continue
+
+                # block comment has now started, just write the line without changing
+                if block_comment_text:
+                    block_comment = True
+                    new_file.write(line)
+                    continue
+
+                # if a comment is inline with code, we need to separate them
+                if comment_text:
+                    line_comment = True
+                    line = comment_text.group(1)
+                    comment_text = comment_text.group(2)
+
+                # replace the identified schema and accumulators with their new names
                 line = re.sub(to_replace_regex, get_replacement, line)
+
+                # if the line isn't a comment, then also update the capitals for reserved words
+                if not line_comment and not block_comment:
+                    line = re.sub(words_to_capital, to_upper, line, flags=re.IGNORECASE)
+
+                # if a inline comment, join the corrected code back with the comment
+                if comment_text:
+                    line = line + comment_text
+                # write the line to a new file 
                 new_file.write(line)
 
 def convert_to_capital_snake(in_word):
@@ -242,9 +282,6 @@ schema = parse_schema()
 correct_schema(schema)
 parse_queries()
 do_replacement()
-
-def to_upper(to_replace):
-    return casefy.uppercase(to_replace[0])
 
 def caps_keywords():
     words_to_capital = compile_list_to_regex(capital_words)
