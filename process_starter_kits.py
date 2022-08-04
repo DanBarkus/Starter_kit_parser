@@ -2,14 +2,12 @@ import re
 import os
 import math
 import glob
-import json
-import networkx as nx
-import matplotlib.pyplot as plt
+import casefy
 
 # Newline variable for f-strings
 nl = '\n'
 
-input_folder = './COVID-19-Analysis/'
+input_folder = './Supply-Chain-Analysis/'
 project_name = ''
 
 graph_name = ''
@@ -18,6 +16,43 @@ edges = []
 vert_names = []
 edge_names = []
 schema = {}
+# this will hold the replacement mapping of old style words to new style
+# example: {graphname: Graph_Name}
+replacement_dict = {}
+
+capital_words = ["ACCUM","ADD","ADMIN","ALL","ALLOCATE","ALTER","AND","ANY","AS","ASC",
+                 "AVG","BAG","BATCH","BETWEEN","BIGINT","BLOB","BOOL","BOOLEAN","BOTH",
+                 "BREAK","BY","CALL","CASCADE","CASE","CATCH","CHAR","CHARACTER","CHECK",
+                 "CLOB","COALESCE","COMPRESS","CONST","CONSTRAINT","CONTINUE","COUNT",
+                 "CREATE","CURRENT_DATE","CURRENT_TIME","CURRENT_TIMESTAMP","CURSOR",
+                 "DATA_SOURCE","DATETIME","DATETIME_ADD","DATETIME_SUB","DECIMAL",
+                 "DECLARE","DEFAULT","DELETE","DESC","DISTRIBUTED","DO","DOUBLE","DROP",
+                 "EDGE","ELSE","ELSEIF","END","ESCAPE","EXCEPTION","EXISTS",
+                 "EXPRFUNCTIONS","EXPRUTIL","FALSE","FILE","FILENAME","FILTER",
+                 "FIXED_BINARY","FLATTEN_JSON_ARRAY","FLOAT","FOR","FOREACH","FROM",
+                 "GLOBAL","GRAPH","GROUP","GROUPBYACCUM","HAVING","HEADER","HEAPACCUM",
+                 "IF","IGNORE","IN","INDEX","INPUT_LINE_FILTER","INSERT","INT","INT16",
+                 "INT32","INT32_T","INT64_T","INT8","INTEGER","INTERPRET","INTERSECT",
+                 "INTO","IS","ISEMPTY","JOB","JOIN","JSONARRAY","JSONOBJECT","KAFKA",
+                 "KEY","LEADING","LIKE","LIMIT","LIST","LOAD","LOADACCUM","LOG","LONG",
+                 "MAP","NOT","NOW","NULL","OFFSET","ON","OR","ORDER","PINNED","POST_ACCUM",
+                 "PRIMARY","PRIMARY_ID","PRINT","PROXY","QUERY","QUIT","RAISE","RANGE",
+                 "REDUCE","REPLACE","RETURN","RETURNS","S3","SAMPLE","SELECT",
+                 "SELECTVERTEX","SET","STATIC","STRING","SUM","TARGET","TEMP_TABLE",
+                 "THEN","TO","TO_CSV","TO_DATETIME","TO_FLOAT","TO_INT","TOKEN","TOKEN_LEN",
+                 "TOKENBANK","TRAILING","TRIM","TRUE","TRY","TUPLE","TYPEDEF","UINT",
+                 "UINT16","UINT32","UINT32_T","UINT64_T","UINT8","UINT8_T","UNION","UPDATE",
+                 "UPSERT","USING","VALUES","VERTEX","WHEN","WHERE","WHILE"]
+
+def compile_list_to_regex(inList):
+    in_list_length = len(inList)
+    re_list = "r'"
+    for idx, item in enumerate(inList):
+        re_list += item 
+        if idx < in_list_length -1:
+            re_list += '\\b|'
+    re_list += "\\b'"
+    return re_list
 
 def get_folder_size(path, mdOut):
     folder_size = 0
@@ -50,19 +85,26 @@ def parse_schema():
     schema = {}
     verts = []
     edges = []
+    graphs = []
     schema_file = open(input_folder + 'db_scripts/schemas/schema.gsql', 'r') # Reading schema file
 
     for line in schema_file:
-        # see if our line is dealing with a vertex or edge
-        vertex_name = re.search(r'(?:create|CREATE|add|ADD) (?:vertex|VERTEX) ([\w\_\-]*)', line)
-        edge_name = re.search(r'(?:create|CREATE|add|ADD) (\w*) (?:edge|EDGE) ([\w\_\-]*)', line)
-        if vertex_name != None:
+        # see if our line is dealing with a vertex or edge or graph name
+        graph_name = re.search(r'graph\W*(\w+)\W*(\(\)|\{)', line, flags=re.IGNORECASE)
+        vertex_name = re.search(r'(?:create|add) (?:vertex) ([\w\_\-]*)', line, flags=re.IGNORECASE)
+        edge_name = re.search(r'(?:create|add) (\w*) (?:edge) ([\w\_\-]*)', line, flags=re.IGNORECASE)
+
+        if graph_name != None:
+            graph_name = graph_name.group(1)
+            graphs.append(graph_name)
+        
+        elif vertex_name != None:
             vertex = {}
             vertex_name = vertex_name.group(1)
             vert_names.append(vertex_name)
             # we already have the name so we only need to deal with what comes after it
             details = re.search(r'\(.*$', line).group(0)
-            primary_id = re.search(r'(?:PRIMARY_ID|primary_id) ([\w\_\-]*) (\w*)', details)
+            primary_id = re.search(r'(?:PRIMARY_ID) ([\w\_\-]*) (\w*)', details, flags=re.IGNORECASE)
             vertex = {"name": vertex_name, "primary_id": {"name": primary_id.group(1), "type": primary_id.group(2)}}
             # get a list of attribute - type combos
             attributes = re.findall(r', ([\w\_\-]*) (\w*)', details)
@@ -71,10 +113,9 @@ def parse_schema():
                 att = {"name": attribute[0], "type": attribute[1]}
                 attrs.append(att)
             vertex["attributes"] = attrs
-            # get everythong after the closing ')'
-            additional_details = re.search(r'\)\s?(?:with|WITH)(.*)', details).group(1)
+            # get everything after the closing ')'
+            additional_details = re.search(r'\)\s?(?:with)(.*)', details, flags=re.IGNORECASE).group(1)
             additional_details = re.findall(r'(\w*)=\"([\w\_\-]*)\"', additional_details)
-            addl_deets = []
             for addl_deet in additional_details:
                 vertex[addl_deet[0]] = addl_deet[1]
             verts.append(vertex)
@@ -98,43 +139,122 @@ def parse_schema():
                     att = {"name": attribute[0], "type": attribute[1]}
                     attrs.append(att)
             edge = {"name": edge_name, "from": from_vert, "to": to_vert, "directed": directed, "attributes": attrs}
+            if directed:
+                reverse_edge = re.search(r'reverse_edge\W*\=\"(\w*)\"', line, flags=re.IGNORECASE).group(1)
+                edge['directed'] = reverse_edge
             try:
-                additional_details = re.search(r'\)\s?(?:with|WITH)(.*)', details).group(1)
+                additional_details = re.search(r'\)\s?(?:with)(.*)', details, flags=re.IGNORECASE).group(1)
                 additional_details = re.findall(r'(\w*)=\"([\w\_\-]*)\"', additional_details)
-                addl_deets = []
                 for addl_deet in additional_details:
                     edge[addl_deet[0]] = addl_deet[1]
             except:
                 pass
             edges.append(edge)
 
-    schema = {"nodes": verts, "edges": edges}
+    schema = {"nodes": verts, "edges": edges, "graphs": graphs}
             
     schema_file.close()
+    # print(schema)
+    return schema
 
-def process_queries(mdOut):
-    for file in glob.glob(input_folder + 'db_scripts/queries/*.gsql'): # Iterates towards queries
-        mdOut.write('## Queries\n')
-        with open(file, 'r') as query_file:
-            queries = query_file.read()
-            # queries = re.findall(r'((?:CREATE|create)\s*\w*\s*(?:QUERY|query).*?\})\n', queries, re.S)
-            query_line = re.search(r'(?:CREATE|create)\s*\w*\s*(?:QUERY|query)\s*(.*?)\s*\((.*?)\).*?(?:FOR|for)', queries, re.S)
-            query_name = query_line[1]
-            mdOut.write(f'### {query_name}{nl}')
+# populate the replacement dict with the new schema names
+def correct_schema(in_schema):
+    for graph in in_schema['graphs']:
+        graph_name = convert_to_capital_snake(graph)
+        replacement_dict[graph] = graph_name
+    for vert in in_schema['nodes']:
+        vert_name = convert_to_capital_snake(vert['name'])
+        replacement_dict[vert['name']] = vert_name
+        v_p_id = vert['primary_id']['name']
+        v_p_id = casefy.snakecase(v_p_id)
+        replacement_dict[vert['primary_id']['name']] = v_p_id
+        for attribute in vert['attributes']:
+            attr_name = attribute['name']
+            attr_name = casefy.snakecase(attr_name)
+            replacement_dict[attribute['name']] = attr_name
+    for edge in in_schema['edges']:
+        edge_name = convert_to_capital_snake(edge['name'])
+        replacement_dict[edge['name']] = edge_name
+        if edge['directed']:
+            rev_edge_name = edge['directed']
+            rev_edge_name = convert_to_capital_snake(rev_edge_name)
+            replacement_dict[edge['directed']] = rev_edge_name
+    # print(replacement_dict)
 
-            query_attrs = query_line[2]
-            if query_attrs != "":
-                mdOut.write('#### **Input Variables**\n')
-                mdOut.write('|Variable Name|Type|\n')
-                mdOut.write('|--|--|\n')
-                query_attrs = query_attrs.split(',')
-                for attr in query_attrs:
-                    attr = attr.split(' ')
-                    mdOut.write(f'|{attr[1]}|{attr[0]}|{nl}')
-            mdOut.write('```\n')
-            # mdOut.write(str(query))
-            mdOut.write('\n```\n')
-            mdOut.write('---\n\n')
+def parse_queries():
+    for q_file in glob.glob(input_folder + 'db_scripts/queries/*.gsql'):
+        query_file = open(q_file, 'r') # Reading schema file
+        for line in query_file:
+
+            accumulator_name = re.search(r'(\w+)accum.*?(@+)(\w+)', line, flags=re.IGNORECASE)
+            query_name = re.search(r'create\W*query\W*(\w*?)\W*\(', line, flags=re.IGNORECASE)
+
+            if accumulator_name != None:
+                # type of the accumulator from the declaration
+                accum_type = accumulator_name.group(1)
+                # @ or @@ from the accumulator (they get stripped by the case conversion)
+                accum_ats = accumulator_name.group(2)
+                # accumulator name
+                accum_name = accumulator_name.group(3)
+
+                new_accum_name = accum_name
+
+                # See if this is a collection accumulator (we need to add the collection type to the end of the accum name)
+                if bool(re.match(r'(set|list|map|array|bag|heap)', accum_type, flags=re.IGNORECASE)):
+                    # see if the accumulator name already has the type in it
+                    name_type = re.search(r'(set|list|map|array|bag|heap)\b', accum_name, flags=re.IGNORECASE)
+                    # Add the type to the end of the accumulator
+                    if name_type == None:
+                        new_accum_name = accum_name + accum_type
+                    new_accum_name = casefy.snakecase(new_accum_name)
+                    new_accum_name = accum_ats + new_accum_name
+                    replacement_dict[accum_ats + accum_name] = new_accum_name
+            
+            elif query_name != None:
+                query_name = query_name.group(1)
+                new_query_name = casefy.snakecase(query_name)
+                if query_name != new_query_name:
+                    replacement_dict[query_name] = new_query_name
+
+        
+    print(replacement_dict)
+
+def get_replacement(in_word):
+    return replacement_dict[in_word[0]]
+
+def do_replacement():
+    to_replace = replacement_dict.keys()
+    to_replace_regex = compile_list_to_regex(to_replace)
+    print(to_replace_regex)
+    for q_file in glob.glob(input_folder + 'db_scripts/queries/*.gsql'):
+        with open(q_file, 'r') as query_file:
+            new_file = open(q_file+'.new', 'w+')
+            for line in query_file:
+                line = re.sub(to_replace_regex, get_replacement, line)
+                new_file.write(line)
+
+def convert_to_capital_snake(in_word):
+    out_word = casefy.titlecase(in_word)
+    out_word = out_word.replace(" ", "_")
+    return out_word
+
+schema = parse_schema()
+correct_schema(schema)
+parse_queries()
+do_replacement()
+
+def to_upper(to_replace):
+    return casefy.uppercase(to_replace[0])
+
+def caps_keywords():
+    words_to_capital = compile_list_to_regex(capital_words)
+    with open(input_folder + 'db_scripts/schemas/schema.gsql', 'r+') as schema_file:
+        content = schema_file.read()
+        cap_content = re.sub(words_to_capital, to_upper, content, flags=re.IGNORECASE)
+        # print(cap_content)
+        schema_file.write(cap_content)
+
+# caps_keywords()
 
 def get_loading_jobs():
     for file in glob.glob(input_folder + 'db_scripts/jobs/*.gsql'):
@@ -147,21 +267,3 @@ def get_data():
 def get_udfs():
     for file in glob.glob(input_folder + 'db_scripts/UDFs/*.hpp'):
         print(file)
-
-# all_folders = glob.glob('./*/')
-# for folder in all_folders:
-#     input_folder = folder
-#     project_name = folder.split('/')[1]
-#     print(project_name)
-#     mdOut = open(input_folder + project_name + ".md", 'w')
-#     parse_schema()
-#     process_queries(mdOut)
-
-#     mdOut.close()
-#     break
-
-# parse_schema()
-# process_queries(open("README.md", 'w'))
-# get_loading_jobs()
-# get_data()
-# get_udfs()
